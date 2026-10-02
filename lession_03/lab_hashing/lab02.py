@@ -1,7 +1,7 @@
-MASK = 0xffffffff
+MASK = 0xffffffff #(32 bits)
 
-INITIAL_VALUE = 0x811C9DC5
-CONSTANT = 0x01000193
+INITIAL_VALUE = 0x811C9DC5 #(32 bits)
+CONSTANT = 0x01000193 #(32 bits)
 
 
 def rotate_left(x: int, r: int) -> int:
@@ -15,7 +15,7 @@ def hash32(data: bytes) -> int:
     for byte in data:
 
         # 1. Mix the byte into the state
-        h ^= byte
+        h ^= byte #(mixing the byte into the state using XOR operation)
 
         # 2. Modular multiplication
         h *= CONSTANT
