@@ -236,7 +236,17 @@ Your goal: understand the RPC client, the RPC method, its arguments, and the ret
 
 
 ### let's take example of mempoll
-mohamed-amine@msi-Katana-GF76-11UC:~$ bitcoin-cli -conf=/opt/bitcoin/bitcoin.conf getmempoolinfo
+## 1. Inspecting the Memory Pool
+
+To inspect the current state of the Bitcoin memory pool, execute the following command:
+
+```bash
+bitcoin-cli -conf=/opt/bitcoin/bitcoin.conf getmempoolinfo
+```
+
+**Output:**
+
+```json
 {
   "loaded": true,
   "size": 0,
@@ -255,6 +265,23 @@ mohamed-amine@msi-Katana-GF76-11UC:~$ bitcoin-cli -conf=/opt/bitcoin/bitcoin.con
   "limitclustersize": 101000,
   "optimal": true
 }
+```
+
+### Interpretation
+
+- **`loaded: true`** — The memory pool is loaded and ready.
+- **`size: 0`** — There are currently no transactions in the memory pool.
+- **`bytes: 0`** — The memory pool contains zero transaction-data bytes.
+- **`usage: 0`** — The memory pool currently uses zero bytes of allocated memory.
+- **`total_fee: 0.00000000`** — The total fees of transactions currently in the pool are zero BTC.
+- **`maxmempool: 300000000`** — The configured maximum memory-pool memory limit is 300,000,000 bytes.
+- **`mempoolminfee: 0.00000100`** — The current minimum memory-pool fee rate is 0.00000100 BTC per virtual byte.
+- **`minrelaytxfee: 0.00000100`** — The minimum transaction relay fee rate is 0.00000100 BTC per virtual byte.
+- **`fullrbf: true`** — Full Replace-by-Fee (RBF) is enabled, allowing eligible replacements without requiring the original transaction to signal RBF explicitly.
+- **`optimal: true`** — Bitcoin Core reports that the memory pool is in its optimal state.
+
+**Conclusion:** At the moment this command was executed, the memory pool was empty. This is normal if no transactions were waiting to be confirmed.
+
 mohamed-amine@msi-Katana-GF76-11UC:~$ 
 explain
 
@@ -366,3 +393,195 @@ bitcoin-cli -conf=/opt/bitcoin/bitcoin.conf getblock \
 ```
 
 You should see four transaction IDs, including the coinbase transaction. That lets you compare the confirmed transactions in Block 103 with the zero unconfirmed transactions in the mempool.
+
+
+-----------------------------------------------------------------
+### remote procedure call (RPC) fundamentals
+# Bitcoin Core RPC — from fundamentals to advanced labs
+
+Since you've already built your Bitcoin regtest network with Amine, Master, Omar, and Sara, the best next step is to learn RPC as a tool for operating, debugging, and automating a Bitcoin node.
+
+RPC stands for Remote Procedure Call. It lets you ask Bitcoin Core to perform an operation or return information, without manually inspecting the blockchain database.
+
+## 1. Understand the RPC architecture
+
+Your application
+
+Terminal, Python script, monitoring tool
+
+Bitcoin JSON-RPC API
+
+Request → method + parameters → JSON response
+
+Your regtest RPC port: `18443`
+
+Bitcoin Core (`bitcoind`)
+
+Wallets · Blockchain · Mempool · P2P network · Mining
+
+For example:
+
+```
+bitcoin-cli -conf=/opt/bitcoin/bitcoin.conf getblockchaininfo
+```
+
+- `bitcoin-cli` is the RPC client.
+- `getblockchaininfo` is the RPC method.
+- The node executes the request and returns JSON.
+- Your command communicates with your local node; it does not query a global Bitcoin server.
+
+RPC and P2P are different: RPC controls or queries your node; P2P connects your node to other Bitcoin nodes.
+
+## 2. The RPC methods worth learning first
+
+Run these on your Amine host, assuming Bitcoin Core is running.
+
+A. Blockchain inspection
+
+```
+bitcoin-cli -conf=/opt/bitcoin/bitcoin.conf getblockchaininfo
+bitcoin-cli -conf=/opt/bitcoin/bitcoin.conf getblockcount
+bitcoin-cli -conf=/opt/bitcoin/bitcoin.conf getchaintips
+```
+
+Learn the current height, chain state, and known chain tips.
+
+B. Blocks and transactions
+
+```
+bitcoin-cli -conf=/opt/bitcoin/bitcoin.conf getblockhash 103
+bitcoin-cli -conf=/opt/bitcoin/bitcoin.conf getblock <HASH> 2
+bitcoin-cli -conf=/opt/bitcoin/bitcoin.conf getrawtransaction <TXID> true
+```
+
+Replace `<HASH>` and `<TXID>` with real values. Learn block headers, Merkle roots, transaction inputs, outputs, and fees. `getrawtransaction` generally requires the transaction to be in the mempool or `txindex`/block context to be available.
+
+C. Wallets and UTXOs
+
+```
+bitcoin-cli -conf=/opt/bitcoin/bitcoin.conf -rpcwallet=miner getbalance
+bitcoin-cli -conf=/opt/bitcoin/bitcoin.conf -rpcwallet=miner listunspent
+bitcoin-cli -conf=/opt/bitcoin/bitcoin.conf -rpcwallet=miner getbalances
+```
+
+Understand the difference between a wallet's balance and the individual UTXOs it controls.
+
+D. P2P network
+
+```
+bitcoin-cli -conf=/opt/bitcoin/bitcoin.conf getpeerinfo
+bitcoin-cli -conf=/opt/bitcoin/bitcoin.conf getconnectioncount
+bitcoin-cli -conf=/opt/bitcoin/bitcoin.conf getnetworkinfo
+```
+
+Investigate peer connections, network services, and why transactions may not propagate.
+
+E. Mempool and fees
+
+```
+bitcoin-cli -conf=/opt/bitcoin/bitcoin.conf getmempoolinfo
+bitcoin-cli -conf=/opt/bitcoin/bitcoin.conf getrawmempool
+bitcoin-cli -conf=/opt/bitcoin/bitcoin.conf getmempoolentry <TXID>
+```
+
+See which transactions are pending and inspect a particular transaction's mempool entry. `getmempoolentry` only works while that transaction is in the mempool.
+
+## 3. Learn how to discover RPC methods yourself
+
+You don't need to memorize every command. Bitcoin Core provides help for its RPC API.
+
+### List all available commands
+
+```
+bitcoin-cli -conf=/opt/bitcoin/bitcoin.conf help
+```
+
+### Understand one specific command
+
+```
+bitcoin-cli -conf=/opt/bitcoin/bitcoin.conf help sendtoaddress
+```
+
+Or:
+
+```
+bitcoin-cli -conf=/opt/bitcoin/bitcoin.conf help getblock
+```
+
+The help output explains the parameters, their types, and the returned values. Some methods require a wallet to be loaded; others operate at the node level.
+
+### Understand RPC errors
+
+| Error                       | Typical cause                                                                     |
+| --------------------------- | --------------------------------------------------------------------------------- |
+| Could not connect to server | `bitcoind` is stopped, starting, or not listening on the expected RPC port.       |
+| Wallet not loaded           | The requested wallet needs to be loaded.                                          |
+| Invalid parameter           | An argument has the wrong type or format.                                         |
+| Method not found            | The method name is incorrect or unavailable.                                      |
+| Insufficient funds          | The wallet has no suitable spendable UTXOs for the requested transaction and fee. |
+
+RPC debugging is an important practical skill: learn to interpret the error instead of immediately changing your configuration.
+
+## 4. Advanced concept: build a transaction using RPC
+
+So far, you've used `sendtoaddress`, which hides much of the transaction-building process.
+
+A more advanced lab is to create and inspect a raw transaction yourself.
+
+1\. Find an available UTXO
+
+Use `listunspent` to identify the previous transaction ID, output index, and amount.
+
+2\. Construct a raw transaction
+
+Use `createrawtransaction` to specify the inputs and outputs.
+
+3\. Fund and sign it
+
+Use `fundrawtransaction` to handle fees and change, then `signrawtransactionwithwallet`.
+
+4\. Inspect and broadcast
+
+Use `decoderawtransaction` to inspect it and `sendrawtransaction` to broadcast the signed transaction.
+
+This lab teaches you how Bitcoin transactions are constructed, signed, and broadcast. Use your regtest network so mistakes don't put real funds at risk.
+
+## 5. Use RPC from Python
+
+RPC is not limited to the terminal. You can use it to build monitoring tools, dashboards, or automated lab exercises.
+
+Bitcoin Core exposes a JSON-RPC interface. Python can send HTTP requests to that interface using an HTTP client such as `requests`.
+
+For example, this script reads the block height:
+
+```
+import requestsfrom requests.auth import HTTPBasicAuthRPC_URL = "http://127.0.0.1:18443"# Load credentials from your protected Bitcoin Core configuration.# Do not hardcode real credentials in source code.RPC_USER = "your_rpc_user"RPC_PASSWORD = "your_rpc_password"payload = {    "jsonrpc": "2.0",    "id": "lab-1",    "method": "getblockcount",    "params": [],}response = requests.post(    RPC_URL,    json=payload,    auth=HTTPBasicAuth(RPC_USER, RPC_PASSWORD),    timeout=10,)response.raise_for_status()result = response.json()if result.get("error"):    raise RuntimeError(result["error"])print("Current block height:", result["result"])
+```
+
+Important: this example requires matching RPC credentials and an RPC server configured to accept the connection. It is not ready to run unchanged with your current configuration, which uses local RPC settings. Never expose your RPC port publicly or commit credentials to Git.
+
+## 6. Your RPC learning roadmap
+
+Level 1 — RPC fundamentals
+
+Start here
+
+Commands, arguments, JSON output, help, errors, and configuration.
+
+Level 2 — Blockchain and UTXOs
+
+Inspect blocks, transactions, Merkle roots, balances, and spendable outputs.
+
+Level 3 — Mempool and P2P
+
+Diagnose peer connections, transaction propagation, fee policies, and confirmations.
+
+Level 4 — Raw transactions
+
+Create, fund, sign, decode, and broadcast transactions.
+
+Level 5 — Automation
+
+Write Python scripts that monitor all four nodes and compare their block heights, mempools, and balances.
+
+My recommendation: start with a practical RPC lab using your four nodes. First learn `help`, `getblockchaininfo`, `getblock`, `listunspent`, and `getpeerinfo`. Then move to raw transactions and Python automation. This builds directly on the network you have already created.
