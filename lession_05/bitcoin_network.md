@@ -563,3 +563,202 @@ These three checks help distinguish local blockchain state from network connecti
 1. If two nodes have the same `bestblockhash`, must their peer lists also be identical?
 2. Can a node have valid block headers but still be missing the corresponding full block data?
 3. If Amine mines Block 104 while disconnected from Master, what happens when the two nodes reconnect and discover competing chains?
+
+
+
+### how the peer to peer connection is established between the nodes
+# Bitcoin P2P Connections — `getpeerinfo`
+
+To see the P2P (Peer-to-Peer) connections that your Bitcoin node has, use `getpeerinfo` with `bitcoin-cli`.
+
+Since you're using Bitcoin Core 31.1 on Ubuntu and working with a `regtest` network, the following commands will help you inspect your connected peers.
+
+## 1. See All P2P Connections
+
+Run:
+
+```
+/opt/bitcoin/bin/bitcoin-cli -regtest getpeerinfo
+```
+
+If `bitcoin-cli` is already in your `PATH`, you can use:
+
+```
+bitcoin-cli -regtest getpeerinfo
+```
+
+This command returns a JSON array containing information about every peer currently connected to your node.
+
+If no peers are connected, the result will be an empty array:
+
+```
+[]
+```
+
+## 2. Understand the Output
+
+The `getpeerinfo` command returns several fields describing each connection.
+
+| Field             | Meaning                                                                                   |
+| ----------------- | ----------------------------------------------------------------------------------------- |
+| `id`              | Internal identifier of the peer connection.                                               |
+| `addr`            | IP address and port of the connected peer.                                                |
+| `inbound`         | `true` if the peer connected to your node; `false` if your node initiated the connection. |
+| `conntime`        | Unix timestamp when the connection began.                                                 |
+| `version`         | Bitcoin P2P protocol version used by the peer.                                            |
+| `subver`          | Software version string reported by the peer.                                             |
+| `startingheight`  | Block height reported by the peer during connection setup.                                |
+| `synced_headers`  | Highest block-header height known from that peer, as reported by your node.               |
+| `synced_blocks`   | Highest block height known from that peer, as reported by your node.                      |
+| `bytesrecv`       | Total bytes received from the peer.                                                       |
+| `bytessent`       | Total bytes sent to the peer.                                                             |
+| `connection_type` | Type of connection, such as `outbound-full-relay`.                                        |
+
+Important: `getpeerinfo` shows the connections your node currently has, not every Bitcoin node in the network.
+
+## 3. Useful Commands for Your Lab
+
+### 3.1. Check the Number of Connected Peers
+
+```
+bitcoin-cli -regtest getconnectioncount
+```
+
+Example output:
+
+```
+2
+```
+
+This means your node currently has two P2P connections.
+
+### 3.2. Display Peer Information in Readable JSON
+
+```
+bitcoin-cli -regtest getpeerinfo | python3 -m json.tool
+```
+
+This formats the JSON output with indentation, making it easier to read.
+
+### 3.3. Check Your Node's Network Configuration
+
+```
+bitcoin-cli -regtest getnetworkinfo
+```
+
+This displays network-related information, including protocol details and local addresses.
+
+### 3.4. Check Your Local Blockchain Height
+
+```
+bitcoin-cli -regtest getblockchaininfo
+```
+
+Look for fields such as:
+
+- `blocks`: number of blocks in the active blockchain.
+- `headers`: number of headers your node has received and validated.
+- `bestblockhash`: hash of the latest block in your active chain.
+
+## 4. Connect Your Bitcoin Nodes Manually
+
+In your Ubuntu/KVM lab, suppose Omar runs a miner node and Amine wants to connect to it.
+
+Assume Omar's VM has an IP address of `192.168.122.101` and listens on the default regtest P2P port, `18444`.
+
+On Amine's node, run:
+
+```
+bitcoin-cli -regtest addnode "192.168.122.101:18444" "onetry"
+```
+
+Replace the example IP address with Omar's actual VM IP address.
+
+The `onetry` option attempts to establish a connection without adding a persistent peer configuration.
+
+After running the command, check the connection:
+
+```
+bitcoin-cli -regtest getpeerinfo
+```
+
+Or check the number of connected peers:
+
+```
+bitcoin-cli -regtest getconnectioncount
+```
+
+Important: For this connection to work:
+
+1. Omar's Bitcoin node must be running.
+2. Omar's node must listen on a network interface reachable from Amine's VM.
+3. The VM network and firewall must allow TCP connections to port `18444`.
+4. Both nodes must use compatible network settings and the intended regtest network.
+
+The default Bitcoin Core regtest P2P port is `18444`, unless you configure a different port.
+
+## 5. Understand How the P2P Network Works
+
+Consider this example topology for your lab:
+
+```
+Omar (Miner Node)
+       |
+       | P2P connection
+       |
+Amine (Bitcoin Node)
+       |
+       | P2P connection
+       |
+Sara (Bitcoin Node)
+```
+
+This is an illustrative topology. Your actual connections depend on how you configure the nodes.
+
+Bitcoin uses a decentralized P2P network. Each node communicates with its connected peers to exchange information about transactions and blocks.
+
+For example, when Omar mines a valid block:
+
+1. Omar mines the block. His node constructs a candidate block and performs proof of work.
+2. Omar validates and accepts the block locally. The block must satisfy Bitcoin's consensus rules.
+3. Omar announces the block to connected peers. The peers learn about the new block.
+4. Connected nodes validate the block. They check its proof of work, transactions, and other consensus requirements.
+5. The block propagates through the network. Nodes can relay it to their own peers.
+
+If Amine is connected to Omar, Amine can receive the block announcement. If Amine is also connected to Sara, Sara may subsequently learn about the block through Amine.
+
+However, propagation is not guaranteed to follow one exact path. Bitcoin nodes may have several peers, and a block can reach a node through different connections.
+
+## 6. Troubleshooting P2P Connections
+
+If `getconnectioncount` returns `0`, check the following:
+
+```
+bitcoin-cli -regtest getconnectioncount
+bitcoin-cli -regtest getpeerinfo
+bitcoin-cli -regtest getnetworkinfo
+```
+
+Then verify that Omar's node is listening on the expected port:
+
+```
+ss -lntp | grep 18444
+```
+
+You can also check whether the port is reachable from Amine's VM:
+
+```
+nc -vz 192.168.122.101 18444
+```
+
+Replace the IP address with Omar's actual VM IP.
+
+Remember that zero peers does not mean your existing blockchain is invalid. It means your node currently has no active P2P connections. Your node can still have a valid local blockchain while disconnected from other nodes.
+
+## 7. Practice Questions
+
+1. What is the difference between `inbound: true` and `inbound: false`?
+2. If `getconnectioncount` returns `0`, does that mean your blockchain is invalid?
+3. If Omar has 101 blocks and Amine has 100 blocks, which commands would you use to investigate the difference?
+4. If Omar mines a block while Amine is disconnected, how might Amine receive that block after reconnecting?
+5. What is the difference between `addnode ... onetry` and configuring a persistent peer connection?
