@@ -2039,3 +2039,1377 @@ Question 8: What is the purpose of a blockchain rescan during wallet recovery?
 Lab 15 is complete when you can independently create a backup, restore it into a separate wallet, explain why the blockchain is separate from wallet data, and describe how descriptor information affects recovery.
 
 The most important lesson is this: Bitcoin Core backups protect access to funds, but recovery must be verified rather than assumed. A wallet that loads successfully is a good start; confirming the relevant keys, addresses, transaction history, and balance is what makes the exercise meaningful.
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+### the unite of the bitcoin 
+# Understanding Your Bitcoin Core `listunspent` Output
+
+This output represents unspent transaction outputs (UTXOs) belonging to your Bitcoin Core wallet. Each object describes a specific output from a transaction that your wallet can potentially spend.
+
+The most important idea is:
+
+Bitcoin does not store your balance as one single number. It tracks individual transaction outputs, and your wallet calculates its balance from the outputs it controls.
+
+Your JSON contains 7 UTXOs. Let's analyze them step by step.
+
+## 1. Summary of your UTXOs
+
+Calculated from the seven entries you provided.
+
+| UTXO  | Amount   | Confirmations | Address index |
+| ----- | -------- | ------------- | ------------- |
+| 1     | 3.0 BTC  | 4             | `/0/0`        |
+| 2     | 1.2 BTC  | 1             | `/0/2`        |
+| 3     | 1.0 BTC  | 1             | `/0/5`        |
+| 4     | 1.0 BTC  | 4             | `/0/0`        |
+| 5     | 2.0 BTC  | 3             | `/0/1`        |
+| 6     | 1.0 BTC  | 1             | `/0/1`        |
+| 7     | 1.2 BTC  | 2             | `/0/1`        |
+| Total | 11.4 BTC |               |               |
+
+Your listed UTXOs total:
+
+\\[ 3+1.2+1+1+2+1+1.2=11.4\text{ BTC} \\]
+
+In satoshis:
+
+\\[ 11.4 \times 100,000,000 =1,140,000,000\text{ sats} \\]
+
+This is the total of the outputs shown, not necessarily the wallet's entire balance: `listunspent` only displays outputs matching its filters, which by default include outputs with at least one confirmation.
+
+## 2. What is a UTXO?
+
+UTXO means Unspent Transaction Output.
+
+Imagine that Omar receives 3 BTC from another transaction. Bitcoin Core records an output worth 3 BTC that Omar's wallet can spend.
+
+Later, Omar sends Sara 1 BTC. Bitcoin generally does not edit the original 3 BTC output to make it 2 BTC. Instead, it consumes the original output and creates new outputs.
+
+For example:
+
+```
+Before the transaction:
+
+Omar owns a UTXO worth 3.0 BTC
+
+After Omar sends Sara 1.0 BTC:
+
+Input:
+  Omar's previous UTXO       3.0 BTC
+
+Outputs:
+  Sara receives              1.0 BTC
+  Omar receives change       1.9999 BTC
+  Transaction fee            0.0001 BTC
+```
+
+The amounts above are illustrative. The actual change and fee depend on the transaction.
+
+The original 3 BTC UTXO is now spent and cannot be spent again. Omar's new change output becomes a different UTXO.
+
+## 3. Understanding each JSON field
+
+Let's take your first entry as an example.
+
+### `txid`
+
+```
+"txid": "5a8d20808236f6b3c7e4ff27c11ba0ca77ca3560ffeda3b04f25b1d5a538f8f7"
+```
+
+This is the transaction ID identifying the transaction that created this output.
+
+Several UTXOs can have the same `txid` if they were created by different outputs of one transaction.
+
+### `vout`
+
+```
+"vout": 0
+```
+
+`vout` is the index of the output within that transaction.
+
+A UTXO is uniquely identified by the combination:
+
+```
+txid + vout
+```
+
+For example:
+
+```
+5a8d2080...a538f8f7 : output 0
+```
+
+This combination is called an outpoint.
+
+Output indexes start at zero, so `vout: 0` means the first output, while `vout: 1` means the second output.
+
+### `address`
+
+```
+"address": "bcrt1qn25rtxwz0wduv0rt0rcrp0qmmg33cqva6ytugn"
+```
+
+This is the Bitcoin address associated with the output.
+
+The `bcrt1` prefix indicates a native SegWit address on your `regtest` network.
+
+Notice that your first and fourth entries use the same address but have different transaction IDs:
+
+- First entry: 3 BTC, `txid` begins `5a8d2080...`
+- Fourth entry: 1 BTC, `txid` begins `e2f00767...`
+
+One address can receive multiple payments. Each payment can create a separate UTXO, even when the receiving address is identical.
+
+### `amount`
+
+```
+"amount": 3.00000000
+```
+
+The amount is expressed in BTC, not satoshis.
+
+```
+3 BTC = 300,000,000 satoshis
+```
+
+The second entry's `1.2 BTC` equals `120,000,000 satoshis`.
+
+### `confirmations`
+
+```
+"confirmations": 4
+```
+
+This indicates how many confirmations the output has, including its containing block.
+
+- `0`: unconfirmed output, generally still in the mempool or otherwise not included in the active chain.
+- `1`: included in a block.
+- `4`: included in a block with three additional blocks built on top of it.
+
+In your example, the first UTXO has 4 confirmations, whereas the second has 1.
+
+On `regtest`, you control block production, so you can observe confirmation counts change as you mine more blocks.
+
+### `spendable`
+
+```
+"spendable": true
+```
+
+Bitcoin Core considers this output spendable by the wallet, assuming the required conditions are met.
+
+This normally means the wallet has the necessary signing capability and the output is eligible under the wallet's current rules. It does not mean that the output has already been spent.
+
+### `solvable`
+
+```
+"solvable": true
+```
+
+Bitcoin Core understands how the output could be spent. For example, it knows the spending script and the required conditions.
+
+An output can be solvable without the wallet having the private keys required to spend it. In your entries, both `solvable` and `spendable` are `true`.
+
+### `safe`
+
+```
+"safe": true
+```
+
+Bitcoin Core considers the output safe to use for spending under its wallet safety rules. This commonly depends on whether the transaction is confirmed or otherwise considered safe by the wallet.
+
+It is not a guarantee against every possible reorganization or other network event.
+
+## 4. Understanding `scriptPubKey`
+
+For your first UTXO:
+
+```
+"scriptPubKey": "00149aa83599c27b9bc63c6b78f030bc1bda231c019d"
+```
+
+This is the locking script, represented as hexadecimal.
+
+Your output starts with:
+
+```
+00 14 ...
+```
+
+For a native SegWit version 0 P2WPKH output:
+
+- `00` indicates witness version 0.
+- `14` means the following witness program is 20 bytes long.
+- The remaining 20 bytes contain the witness program, derived from a public-key hash.
+
+The locking script defines the conditions required to spend the output. For this address type, the spending transaction normally supplies a matching public key and a valid signature.
+
+## 5. Understanding `desc` and `parent_descs`
+
+These fields are particularly important for your wallet descriptor lab.
+
+Your first entry has:
+
+```
+wpkh([d09100b8/84h/1h/0h/0/0]02de7bc9... )
+```
+
+This descriptor describes the specific output's spending conditions.
+
+| Component     | Meaning                                             |
+| ------------- | --------------------------------------------------- |
+| `wpkh(...)`   | Native SegWit pay-to-witness-public-key-hash output |
+| `d09100b8`    | Master key fingerprint                              |
+| `84h`         | BIP84 derivation purpose                            |
+| `1h`          | Test-network coin type                              |
+| `0h`          | Account index 0                                     |
+| `/0/0`        | External receiving branch, address index 0          |
+| `02de7bc9...` | Public key associated with this output              |
+
+The `h` suffix means hardened derivation.
+
+Your `parent_descs` field contains the broader derivation template:
+
+```
+wpkh([d09100b8/84h/1h/0h]tpub.../0/*)
+```
+
+The wildcard `*` represents a sequence of child indexes. Bitcoin Core can use this template to derive multiple receiving addresses.
+
+The two descriptors have different purposes:
+
+- `desc` identifies the specific output's spending conditions.
+- `parent_descs` identifies the broader descriptor that generated or tracks the output.
+
+The `tpub` is an extended public key for a test-network derivation. It does not itself contain the private key.
+
+## 6. Why do several UTXOs share the same address?
+
+Look at these entries:
+
+```
+Address: bcrt1qdnv28jtdl9tsklvusn6890sdm50s6cwj4c7mrq
+
+UTXO A: 2.0 BTC, 3 confirmations
+UTXO B: 1.0 BTC, 1 confirmation
+UTXO C: 1.2 BTC, 2 confirmations
+```
+
+They all refer to the same receiving address, but each has its own `txid` and `vout`.
+
+If these are all the relevant outputs and they remain unspent, the total associated with this address is:
+
+\\[ 2+1+1.2=4.2\text{ BTC} \\]
+
+That is three separate UTXOs, not one 4.2 BTC UTXO.
+
+Likewise, your address `bcrt1qn25...` appears twice, with 3 BTC and 1 BTC, for a combined 4 BTC across those two outputs.
+
+The descriptor paths also reveal that different addresses are being used:
+
+- `/0/0`: external address index 0
+- `/0/1`: external address index 1
+- `/0/2`: external address index 2
+- `/0/5`: external address index 5
+
+These are derivation indexes, not transaction indexes or block heights.
+
+## 7. Verify this directly in Bitcoin Core
+
+Run these commands on the machine hosting your Bitcoin Core regtest node.
+
+### List your UTXOs
+
+```
+bitcoin-cli -regtest -rpcwallet=omar listunspent
+```
+
+### Calculate the total shown by the command
+
+You can calculate the sum of the default `listunspent` results with Python, using `Decimal` for exact monetary arithmetic:
+
+```
+from decimal import Decimalamounts = [    Decimal("3.0"),    Decimal("1.2"),    Decimal("1.0"),    Decimal("1.0"),    Decimal("2.0"),    Decimal("1.0"),    Decimal("1.2"),]total_btc = sum(amounts, Decimal("0"))total_sats = int(total_btc * Decimal("100000000"))print("Total BTC:", total_btc)print("Total satoshis:", total_sats)
+```
+
+Expected output:
+
+```
+Total BTC: 11.4
+Total satoshis: 1140000000
+```
+
+This calculation uses the seven entries you pasted. To calculate the live total from Bitcoin Core, retrieve the current RPC response and sum its `amount` fields.
+
+### Inspect one specific transaction
+
+Use the actual transaction ID from your output:
+
+```
+bitcoin-cli -regtest getrawtransaction \
+  5a8d20808236f6b3c7e4ff27c11ba0ca77ca3560ffeda3b04f25b1d5a538f8f7 \
+  true
+```
+
+If the transaction is available to the node, this returns its decoded transaction details, including inputs and outputs. If Bitcoin Core reports that the transaction is not found, you may need to query the wallet transaction or use a node with the transaction available.
+
+### Check wallet balance
+
+```
+bitcoin-cli -regtest -rpcwallet=omar getbalance
+```
+
+The wallet balance and the total of your pasted UTXOs may differ if there are additional outputs, unconfirmed transactions, immature coinbase rewards, or different RPC filters.
+
+## 8. Key Takeaways
+
+1. A UTXO is an individual transaction output that has not yet been spent.
+2. `txid` plus `vout` uniquely identifies an output.
+3. The `amount` field is denominated in BTC.
+4. An address can have multiple UTXOs.
+5. `confirmations` measures how deeply the output is included in the active blockchain.
+6. Descriptors explain the spending conditions and how wallet addresses are derived.
+7. Your seven supplied entries total 11.4 BTC, or 1,140,000,000 satoshis.
+
+## Practice questions
+
+1. What uniquely identifies a UTXO?
+2. Why can the same Bitcoin address appear in multiple UTXOs?
+3. What is the difference between `spendable` and `solvable`?
+4. If you spend a 3 BTC UTXO to pay 1 BTC, what happens to the original output?
+5. What does `/0/5` mean in a descriptor derivation path?
+
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+### wallets transaction history 
+# Lab 17 — Wallet Transaction History
+
+Environment: Ubuntu Server + Bitcoin Core + Regtest
+
+Participants: Omar, Sara, Amine, Ahmed
+
+Objective: Learn how to inspect wallet transactions, understand confirmations, identify received and sent funds, and distinguish immature coinbase rewards from spendable bitcoins.
+
+## 1. Introduction
+
+In Bitcoin, the wallet does not simply store a number representing the user's money. It tracks transactions and the unspent transaction outputs (UTXOs) that the wallet can spend.
+
+Bitcoin Core provides RPC commands that allow us to inspect the transaction history associated with a wallet.
+
+In this lab, we will use Omar's wallet as an example. Omar is a miner, Sara receives payments, and Amine sends bitcoins.
+
+### Learning objectives
+
+By the end of this lab, you will be able to:
+
+1. Retrieve wallet transaction history using `listtransactions`.
+2. Identify transactions received and sent.
+3. Understand transaction confirmations.
+4. Inspect transactions since a particular block using `listsinceblock`.
+5. Explain immature coinbase rewards.
+6. Distinguish wallet transaction history from the current spendable balance.
+
+## 2. Prepare the Bitcoin Core environment
+
+Check the blockchain network:
+
+```
+bitcoin-cli -regtest getblockchaininfo
+```
+
+Check the loaded wallets:
+
+```
+bitcoin-cli -regtest listwallets
+```
+
+Check Omar's balance:
+
+```
+bitcoin-cli -regtest -rpcwallet=omar getbalance
+```
+
+Check the current block height:
+
+```
+bitcoin-cli -regtest getblockcount
+```
+
+If Omar's wallet is not loaded, load it:
+
+```
+bitcoin-cli -regtest loadwallet "omar"
+```
+
+If it is already loaded, do not load it again.
+
+## 3. Lab 17.1 — Inspect Wallet Transactions with `listtransactions`
+
+The `listtransactions` RPC returns recent transactions associated with a wallet.
+
+Basic syntax:
+
+```
+bitcoin-cli -regtest -rpcwallet=omar listtransactions
+```
+
+To display the last 10 entries:
+
+```
+bitcoin-cli -regtest -rpcwallet=omar listtransactions "*" 10
+```
+
+To display the last 20 entries:
+
+```
+bitcoin-cli -regtest -rpcwallet=omar listtransactions "*" 20
+```
+
+The command may return JSON entries containing fields such as:
+
+```
+[
+  {
+    "address": "bcrt1...",
+    "category": "receive",
+    "amount": 2.0,
+    "confirmations": 6,
+    "txid": "example_transaction_id",
+    "time": 1790000000
+  }
+]
+```
+
+This is an illustrative example, not actual output from your node.
+
+### Important fields
+
+| Field           | Meaning                                                              |
+| --------------- | -------------------------------------------------------------------- |
+| `address`       | Address associated with the wallet transaction, when applicable      |
+| `category`      | Transaction classification, such as `receive`, `send`, or `generate` |
+| `amount`        | Amount attributed to that wallet entry                               |
+| `confirmations` | Number of confirmations associated with the transaction              |
+| `txid`          | Transaction identifier                                               |
+| `time`          | Transaction timestamp recorded by the wallet                         |
+
+A transaction may generate multiple entries, particularly when a payment has change outputs or involves several wallet outputs. Therefore, do not assume that every entry corresponds to a separate transaction.
+
+### Example: Omar receives 2 BTC
+
+Suppose Amine sends 2 BTC to an address belonging to Omar.
+
+The transaction is included in a block, and Omar's wallet recognizes the output.
+
+Omar runs:
+
+```
+bitcoin-cli -regtest -rpcwallet=omar listtransactions "*" 10
+```
+
+He sees a `receive` entry with an amount of 2 BTC.
+
+That entry tells Omar that the wallet recognizes a received output. It does not, by itself, establish that every other condition for spending the output has been satisfied.
+
+## 4. Lab 17.2 — Understand Received and Sent Transactions
+
+Bitcoin Core commonly uses transaction categories to describe how an entry relates to a wallet.
+
+### Received transactions
+
+A received entry represents funds received by the wallet.
+
+For example:
+
+- Amine sends 2 BTC to Sara.
+- Sara controls the destination address.
+- Sara's wallet recognizes the transaction.
+- Sara's wallet records the received amount.
+
+Inspect Sara's history:
+
+```
+bitcoin-cli -regtest -rpcwallet=sara listtransactions "*" 10
+```
+
+### Sent transactions
+
+A sent entry represents funds sent from the wallet.
+
+Suppose Amine sends 2 BTC to Sara and pays a transaction fee.
+
+The transaction could contain:
+
+- An output of 2 BTC to Sara.
+- A change output returning the remainder to Amine.
+- A transaction fee paid to the miner.
+
+For example, assume Amine spends an input worth 5 BTC, sends 2 BTC to Sara, and receives 2.999 BTC as change.
+
+The transaction fee is:
+
+\\[ 5 - 2 - 2.999 = 0.001\ \text{BTC} \\]
+
+Amine's wallet records the outgoing payment and accounts for the change and fee according to its transaction accounting.
+
+Sara's wallet records the incoming payment.
+
+The same transaction can therefore appear differently in different wallets.
+
+### Important distinction
+
+The amount shown for a sent entry is not necessarily the total amount removed from the wallet's spendable funds. Change outputs may still belong to the sender, and transaction fees must also be considered.
+
+## 5. Lab 17.3 — Understand Confirmations
+
+A Bitcoin transaction begins in the mempool after a node accepts it for relay, assuming it has not yet been confirmed in a block.
+
+When a miner includes the transaction in a block, the transaction receives its first confirmation.
+
+Each additional block built on top of that block increases its confirmation count.
+
+If a transaction is included in block 100:
+
+| Current chain height | Confirmations                        |
+| -------------------- | ------------------------------------ |
+| 99                   | Not yet included in the active chain |
+| 100                  | 1                                    |
+| 101                  | 2                                    |
+| 102                  | 3                                    |
+| 105                  | 6                                    |
+
+For a transaction included in an active-chain block at height \\(H_t\\), when the current tip is \\(H_c\\):
+
+\\[ \text{Confirmations} = H_c - H_t + 1 \\]
+
+This formula assumes the transaction's block is still in the active chain.
+
+### Check confirmations
+
+Use:
+
+```
+bitcoin-cli -regtest -rpcwallet=sara listtransactions "*" 10
+```
+
+Find the transaction and inspect its `confirmations` field.
+
+You can also inspect a known transaction with:
+
+```
+bitcoin-cli -regtest getrawtransaction "TXID" true
+```
+
+Replace `TXID` with the actual transaction ID. This RPC requires the transaction to be available to the node, for example through its mempool or transaction index/block context.
+
+### What happens if a transaction has zero confirmations?
+
+It may be in the mempool, waiting to be mined. However, zero confirmations alone do not guarantee that the transaction will be mined, and a wallet may show an unconfirmed transaction before it is included in a block.
+
+On regtest, you can mine a block manually:
+
+```
+bitcoin-cli -regtest -rpcwallet=omar getnewaddress
+```
+
+Copy the returned address, then mine one block to it:
+
+```
+bitcoin-cli -regtest generatetoaddress 1 "YOUR_MINER_ADDRESS"
+```
+
+Check the block height again:
+
+```
+bitcoin-cli -regtest getblockcount
+```
+
+Note: Mining one block does not guarantee that a particular transaction will be included unless that transaction is eligible and selected from the mempool.
+
+## 6. Lab 17.4 — Inspect Transactions Since a Block with `listsinceblock`
+
+The `listsinceblock` RPC helps identify wallet transactions that have occurred since a specified block.
+
+Basic syntax:
+
+```
+bitcoin-cli -regtest -rpcwallet=omar listsinceblock
+```
+
+You can also provide a block hash:
+
+```
+bitcoin-cli -regtest -rpcwallet=omar listsinceblock "BLOCK_HASH"
+```
+
+Replace `BLOCK_HASH` with the hash of a block known to the node.
+
+To retrieve a block hash at a specific height:
+
+```
+bitcoin-cli -regtest getblockhash 100
+```
+
+Use the actual height available on your chain.
+
+Then inspect wallet transactions since that block:
+
+```
+bitcoin-cli -regtest -rpcwallet=omar listsinceblock "YOUR_BLOCK_HASH"
+```
+
+The response includes fields such as `transactions` and `lastblock`. Depending on the command options and Bitcoin Core version, it may also include removed transactions or other metadata.
+
+### Example
+
+Suppose the current block height is 105, and you want to inspect Omar's wallet activity since block 100.
+
+You obtain the block hash for height 100:
+
+```
+bitcoin-cli -regtest getblockhash 100
+```
+
+You then pass that hash to `listsinceblock`.
+
+This is useful for monitoring wallet activity over a range of blocks without manually reviewing every historical transaction.
+
+Important: `listsinceblock` is a wallet-history query, not a general-purpose list of every transaction in the blockchain.
+
+## 7. Lab 17.5 — Understand Immature Coinbase Rewards
+
+A coinbase transaction is a special transaction created by a miner to claim the block subsidy and, where applicable, transaction fees.
+
+For example, on regtest, Omar mines a block and receives a coinbase reward.
+
+Initially, the reward is immature.
+
+Bitcoin Core requires a coinbase output to reach 100 confirmations before it can be spent. This maturity rule applies to regtest as well as the other standard Bitcoin networks.
+
+### Why does coinbase maturity exist?
+
+It helps protect against the consequences of reorganizations affecting recently mined blocks.
+
+If a recently mined block is removed from the active chain, the coinbase reward associated with that block cannot simply remain spendable as if the block had never been invalidated.
+
+### Check immature coinbase funds
+
+Run:
+
+```
+bitcoin-cli -regtest -rpcwallet=omar getbalances
+```
+
+An example response may contain:
+
+```
+{
+  "mine": {
+    "trusted": 0.0,
+    "untrusted_pending": 0.0,
+    "immature": 50.0
+  }
+}
+```
+
+This is an illustrative example. Your actual values depend on the blocks mined, the wallet's coinbase outputs, and the current chain state.
+
+The `immature` amount represents mining rewards that are not yet spendable because they have not matured.
+
+### Mine enough blocks
+
+If Omar mines a coinbase reward, he must wait until it has 100 confirmations before spending it.
+
+In regtest, this can be simulated quickly:
+
+```
+bitcoin-cli -regtest generatetoaddress 101 "YOUR_MINER_ADDRESS"
+```
+
+Use an address controlled by Omar's miner wallet.
+
+Then check:
+
+```
+bitcoin-cli -regtest -rpcwallet=omar getbalances
+```
+
+The exact number of spendable bitcoins depends on which blocks were mined, which rewards belong to Omar, and whether he already spent any outputs.
+
+### Important distinction
+
+- A mined reward can appear in the wallet before it is spendable.
+- An immature coinbase reward is not equivalent to an ordinary confirmed payment.
+- A mature coinbase reward becomes eligible for spending, provided the wallet controls the output and all other transaction rules are satisfied.
+
+## 8. Lab 17.6 — Compare Wallet History and Wallet Balance
+
+Use the following commands:
+
+```
+bitcoin-cli -regtest -rpcwallet=omar listtransactions "*" 20
+```
+
+```
+bitcoin-cli -regtest -rpcwallet=omar getbalance
+```
+
+```
+bitcoin-cli -regtest -rpcwallet=omar getbalances
+```
+
+These commands answer different questions.
+
+| Command            | Purpose                                                                             |
+| ------------------ | ----------------------------------------------------------------------------------- |
+| `listtransactions` | Shows recent wallet transaction entries                                             |
+| `getbalance`       | Reports the wallet's balance according to the RPC's parameters and accounting rules |
+| `getbalances`      | Separates balance categories, including trusted, pending, and immature amounts      |
+
+Wallet history is not the same thing as current spendable funds. A wallet may have received bitcoins in the past and later spent them.
+
+### Lab 17 checklist
+
+- Inspected transaction history using `listtransactions`.
+- Identified `receive` and `send` entries.
+- Checked transaction confirmations.
+- Queried history with `listsinceblock`.
+- Examined immature coinbase rewards.
+- Compared transaction history with the wallet's current balance.
+
+# Lab 18 — Wallet Security Model
+
+Objective: Understand the fundamental Bitcoin concepts that are frequently misunderstood:
+
+```
+Address ≠ account
+Private key ≠ address
+UTXO ≠ balance stored on blockchain
+```
+
+These distinctions explain how Bitcoin ownership, payments, and wallet balances actually work.
+
+## 1. Address ≠ Account
+
+### 1.1 What is a Bitcoin address?
+
+A Bitcoin address is an identifier used to specify where a transaction output should be sent.
+
+For example, Sara generates a receiving address:
+
+```
+bcrt1qexample...
+```
+
+This is a placeholder, not a valid address.
+
+Amine can use Sara's address as the destination of a transaction.
+
+However, the address is not an account in the traditional banking sense.
+
+### 1.2 Why is an address not an account?
+
+In a traditional bank, an account is generally associated with a maintained balance and a transaction ledger managed by the bank.
+
+Bitcoin works differently.
+
+A Bitcoin address does not contain a balance. Instead, the blockchain records transaction outputs, and wallet software identifies which outputs are associated with its keys and scripts.
+
+A single wallet can control many addresses.
+
+For example:
+
+```
+                 Sara's Wallet
+                       |
+          +------------+------------+
+          |            |            |
+       Address A    Address B    Address C
+          |            |            |
+       UTXO 1       UTXO 2       UTXO 3
+```
+
+Sara might use one address to receive a payment from Amine and another address for a later payment from Omar.
+
+Her wallet can track funds associated with all these addresses.
+
+### 1.3 Why does Bitcoin use multiple addresses?
+
+Using separate receiving addresses can improve privacy by making it harder for outside observers to associate every payment with the same identity.
+
+However, address reuse is technically possible, and using different addresses does not guarantee complete privacy.
+
+### 1.4 Verify it in Bitcoin Core
+
+Generate two receiving addresses:
+
+```
+bitcoin-cli -regtest -rpcwallet=sara getnewaddress
+```
+
+```
+bitcoin-cli -regtest -rpcwallet=sara getnewaddress
+```
+
+The addresses will normally be different.
+
+Yet both can belong to the same wallet.
+
+Check the wallet's balance:
+
+```
+bitcoin-cli -regtest -rpcwallet=sara getbalance
+```
+
+The wallet balance aggregates the funds recognized by the wallet; it is not a balance stored inside either individual address.
+
+Conclusion: An address is a destination identifier for a transaction output, not a bank account.
+
+## 2. Private Key ≠ Address
+
+### 2.1 What is a private key?
+
+A private key is a secret number used in Bitcoin's cryptographic system to authorize spending under the corresponding spending conditions.
+
+A Bitcoin address is a different kind of object: an identifier derived through a process involving public keys and, depending on the address type, scripts and hashes.
+
+A simplified relationship is:
+
+```
+Private Key
+     |
+     v
+Public Key
+     |
+     v
+Script / Address Derivation
+     |
+     v
+Bitcoin Address
+```
+
+The exact process varies by address type. For example, modern SegWit addresses can represent different script constructions, and not all addresses are derived from a public key using one universal formula.
+
+### 2.2 Why are they different?
+
+The private key must remain secret.
+
+The address can be shared publicly to receive funds.
+
+If Sara wants Amine to send her bitcoins, she can share a receiving address. She should never need to give Amine her private key.
+
+If Amine knows Sara's address, he can create a transaction paying that address. He cannot thereby spend Sara's funds.
+
+If Amine obtains Sara's private key or equivalent spending credentials, he may be able to authorize spending of funds controlled by that key.
+
+### 2.3 Example
+
+Suppose Sara receives 2 BTC at an address associated with her wallet.
+
+Amine can see the address and the transaction on the blockchain, but he cannot spend the 2 BTC merely because he knows the address.
+
+Sara's wallet can authorize spending because it has access to the necessary private key or other required signing credentials.
+
+### 2.4 Verify the concept
+
+Generate a receiving address:
+
+```
+bitcoin-cli -regtest -rpcwallet=sara getnewaddress
+```
+
+Inspect the address:
+
+```
+bitcoin-cli -regtest -rpcwallet=sara getaddressinfo "SARA_ADDRESS"
+```
+
+Replace `SARA_ADDRESS` with the actual address returned earlier.
+
+Depending on the address and wallet configuration, `getaddressinfo` can show information such as whether the address is associated with the wallet and whether the wallet has the corresponding private key.
+
+Do not export private keys merely to prove that this relationship exists. The RPC output is sufficient to investigate address ownership metadata.
+
+Conclusion: A public address can be shared. A private key must be protected because it can provide the authority needed to spend associated funds.
+
+## 3. UTXO ≠ Balance Stored on Blockchain
+
+This is one of the most important concepts in Bitcoin.
+
+### 3.1 What is a UTXO?
+
+UTXO means Unspent Transaction Output.
+
+When a Bitcoin transaction creates an output, that output can later be used as an input to another transaction, provided it is still unspent and the spending conditions are satisfied.
+
+For example, Amine sends Sara 2 BTC.
+
+The transaction creates an output of 2 BTC to a script associated with Sara's address.
+
+Conceptually:
+
+```
+Transaction A
+     |
+     v
+Output: 2 BTC
+     |
+     v
+Sara's Wallet Can Spend It
+```
+
+If that output has not yet been spent, it is a UTXO.
+
+### 3.2 Where is the balance?
+
+The blockchain does not maintain a bank-style balance field for every Bitcoin address or wallet.
+
+Instead, the blockchain contains transaction outputs and records which outputs have been spent.
+
+Wallet software determines which unspent outputs it can control and sums their values to calculate a balance.
+
+For example, Sara has three unspent outputs:
+
+| UTXO   | Value    |
+| ------ | -------- |
+| UTXO 1 | 2 BTC    |
+| UTXO 2 | 0.5 BTC  |
+| UTXO 3 | 1.25 BTC |
+| Total  | 3.75 BTC |
+
+Sara's wallet can report a balance of 3.75 BTC, assuming all three outputs are recognized by the wallet and meet the applicable balance criteria.
+
+The 3.75 BTC is a calculation over relevant outputs, not a balance number stored in a single blockchain account record.
+
+### 3.3 What happens when Sara spends 2 BTC?
+
+Suppose Sara wants to pay Omar 2 BTC and the transaction fee is 0.001 BTC.
+
+She uses the 2 BTC UTXO as an input.
+
+The transaction creates two outputs:
+
+- 1.5 BTC to Omar.
+- 0.499 BTC back to Sara as change.
+
+The accounting is:
+
+\\[ 2 = 1.5 + 0.499 + 0.001 \\]
+
+The original 2 BTC UTXO is consumed, and two new UTXOs are created.
+
+```
+Before:
+Sara's UTXO = 2 BTC
+
+          |
+          v
+
+Transaction Input:
+        2 BTC
+
+          |
+          v
+
+Transaction Outputs:
+   +------------------+
+   | Omar: 1.500 BTC  |
+   | Sara: 0.499 BTC  |
+   | Fee:  0.001 BTC  |
+   +------------------+
+```
+
+The fee is the difference between the total inputs and the total outputs. It is not a separate transaction output.
+
+After the transaction confirms, the original UTXO is no longer available to spend. The new outputs become part of the UTXO set.
+
+### 3.4 Verify UTXOs using Bitcoin Core
+
+Inspect Sara's spendable outputs:
+
+```
+bitcoin-cli -regtest -rpcwallet=sara listunspent
+```
+
+The response can contain fields such as:
+
+- `txid`: transaction containing the output.
+- `vout`: index of the output within that transaction.
+- `address`: associated address, when applicable.
+- `amount`: output value.
+- `confirmations`: number of confirmations.
+- `spendable`: whether the wallet considers the output spendable.
+- `solvable`: whether the wallet knows how to satisfy the spending conditions, which does not necessarily mean it has the private keys needed to sign.
+
+Each UTXO is identified by the combination of its transaction ID and output index:
+
+```
+(txid, vout)
+```
+
+Two outputs in the same transaction can have different `vout` values and therefore represent distinct UTXOs.
+
+### 3.5 Verify the wallet's aggregate balance
+
+Run:
+
+```
+bitcoin-cli -regtest -rpcwallet=sara getbalances
+```
+
+Compare the reported balance categories with the outputs returned by `listunspent`.
+
+Do not expect a simple sum of every listed output to match every wallet balance field in every situation. Confirmations, trust status, immature coinbase outputs, locked outputs, and other wallet accounting rules can affect the comparison.
+
+Conclusion: Bitcoin records transaction outputs and their spending status. A wallet calculates its balance from the outputs it recognizes and can control.
+
+## 4. How the Three Concepts Fit Together
+
+Let's connect the three concepts using a single transaction.
+
+Amine sends 2 BTC to Sara.
+
+1. Sara gives Amine a receiving address.
+2. Amine creates a transaction paying that address.
+3. The transaction creates an output worth 2 BTC.
+4. Once included in the active blockchain, that output can become a UTXO.
+5. Sara's wallet recognizes the output and includes it in its balance according to the wallet's accounting rules.
+6. Sara can spend it if she has the necessary signing authority and the output is eligible to spend.
+
+The key distinctions are:
+
+| Concept        | What it represents                                                      | What it does not represent                                          |
+| -------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Address        | A destination identifier associated with spending conditions            | A bank account with its own stored balance                          |
+| Private key    | Secret cryptographic material used to authorize spending                | A public receiving address                                          |
+| UTXO           | An unspent transaction output recorded on the blockchain                | A wallet's total balance                                            |
+| Wallet balance | An amount calculated by wallet software under specific accounting rules | A single balance field maintained by the blockchain for that wallet |
+
+## 5. Lab 18 — Practical Security Exercises
+
+### Exercise 1 — Address ownership
+
+Generate two addresses in Sara's wallet:
+
+```
+bitcoin-cli -regtest -rpcwallet=sara getnewaddress
+bitcoin-cli -regtest -rpcwallet=sara getnewaddress
+```
+
+Explain why two different addresses can belong to the same wallet.
+
+### Exercise 2 — Address metadata
+
+Run:
+
+```
+bitcoin-cli -regtest -rpcwallet=sara getaddressinfo "SARA_ADDRESS"
+```
+
+Identify the fields that help establish whether the wallet recognizes the address and has the necessary private key information.
+
+### Exercise 3 — Inspect UTXOs
+
+Run:
+
+```
+bitcoin-cli -regtest -rpcwallet=sara listunspent
+```
+
+Record the transaction ID, output index, amount, confirmations, and spendability status of each output.
+
+### Exercise 4 — Compare with the wallet balance
+
+Run:
+
+```
+bitcoin-cli -regtest -rpcwallet=sara getbalances
+```
+
+Explain why the wallet balance is not simply a value stored inside a Bitcoin address.
+
+### Exercise 5 — Analyze a payment
+
+Suppose Sara has one UTXO worth 3 BTC. She sends Omar 1 BTC and pays a 0.001 BTC fee.
+
+Calculate the change output:
+
+\\[ \text{Change} = 3 - 1 - 0.001 \\]
+
+The change is 1.999 BTC.
+
+Explain why the original 3 BTC UTXO is consumed and why the change is represented by a new output.
+
+## 6. Final Knowledge Check
+
+1. Can one Bitcoin wallet control multiple receiving addresses?
+2. Why can someone who knows a receiving address not automatically spend the associated funds?
+3. What information identifies a particular UTXO?
+4. What happens to an input UTXO after a transaction spends it?
+5. Why can a wallet's reported balance differ from the sum of all outputs visible in a basic transaction-history query?
+6. What is the difference between a transaction confirmation and a UTXO?
+7. Why is a change output not the same as returning money to a bank account?
+8. Why should private keys never be shared when requesting a payment?
+
+Final takeaway: Bitcoin uses keys and spending conditions to authorize transactions, addresses to identify destinations, and UTXOs to represent spendable outputs. Wallets interpret those outputs and calculate balances; the blockchain does not maintain conventional bank accounts.
+
+# Understanding Your Bitcoin Core `listtransactions` Output
+
+Your output is an excellent example for Lab 17 because it shows three important things happening in your regtest wallet:
+
+- Three outgoing payments (`send`).
+- One immature mining reward (`immature`).
+- Three confirmations for all four entries, meaning they are associated with block 104, which currently has three confirmations.
+
+Let's analyze each part and connect it to Bitcoin's UTXO model.
+
+## 1. Overview of your transactions
+
+| Entry | Category   | Amount           | Confirmations | Meaning                                  |
+| ----- | ---------- | ---------------- | ------------- | ---------------------------------------- |
+| 1     | `send`     | −1 BTC           | 3             | Outgoing payment                         |
+| 2     | `send`     | −1 BTC           | 3             | Outgoing payment                         |
+| 3     | `send`     | −2 BTC           | 3             | Outgoing payment                         |
+| 4     | `immature` | +50.00000425 BTC | 3             | Coinbase mining reward not yet spendable |
+
+The three outgoing entries represent 4 BTC in total payments, excluding fees. The recorded fees add another small cost.
+
+The immature reward is separate from those payments. Even though the wallet recognizes it, you cannot spend it yet.
+
+One important detail: the first three entries have different transaction IDs (`txid`), so they represent three distinct transactions, not three outputs of the same transaction.
+
+## 2. Understand the `send` entries
+
+Let's examine your first transaction:
+
+```
+{
+  "address": "bcrt1qzxkml4yqfk006wqpj0js3kj6lwya95l3pqax7a",
+  "category": "send",
+  "amount": -1.00000000,
+  "vout": 1,
+  "fee": -0.00000141,
+  "confirmations": 3,
+  "blockheight": 104,
+  "txid": "ad96aa0449defa5dc2955aa43aa51c5005a0217479b98a1a535ffe04eada0508"
+}
+```
+
+### What does each field mean?
+
+- `category: send` — Bitcoin Core classifies this wallet entry as an outgoing payment.
+- `amount: -1.00000000` — The wallet sent 1 BTC to the associated destination.
+- `fee: -0.00000141` — The transaction fee was 0.00000141 BTC, or 141 satoshis.
+- `vout: 1` — The associated output has index 1 in the transaction. This is an output index, not a confirmation count.
+- `confirmations: 3` — The transaction has three confirmations.
+- `blockheight: 104` — The transaction was included in block 104.
+- `blockhash` — Identifies the block containing the transaction.
+- `txid` — Identifies the transaction.
+- `wtxid` — Identifies the transaction including its witness data, where applicable.
+- `bip125-replaceable: no` — Bitcoin Core does not currently classify this transaction as BIP125-replaceable.
+
+### How much did the wallet spend?
+
+For this transaction:
+
+\\[ \text{Wallet cost}=1+0.00000141 \\]
+
+\\[ \boxed{1.00000141\ \text{BTC}} \\]
+
+The recipient receives 1 BTC, while the fee is paid to the miner who includes the transaction in a block.
+
+Your other two outgoing entries follow the same principle.
+
+| Payment       | Amount sent | Fee            | Total wallet cost |
+| ------------- | ----------- | -------------- | ----------------- |
+| Transaction 1 | 1 BTC       | 0.00000141 BTC | 1.00000141 BTC    |
+| Transaction 2 | 1 BTC       | 0.00000143 BTC | 1.00000143 BTC    |
+| Transaction 3 | 2 BTC       | 0.00000141 BTC | 2.00000141 BTC    |
+| Total         | 4 BTC       | 0.00000425 BTC | 4.00000425 BTC    |
+
+These totals assume the three entries are distinct outgoing transactions as shown in your data.
+
+Notice that `amount` and `fee` are both negative in the wallet history. This is how Bitcoin Core represents their effects on the sending wallet; the fee is not included in the displayed payment amount.
+
+## 3. Why do all transactions have three confirmations?
+
+Your transactions contain:
+
+```
+{
+  "blockheight": 104,
+  "confirmations": 3
+}
+```
+
+The confirmation formula is:
+
+\\[ C=H\_{\text{current}}-H\_{\text{transaction}}+1 \\]
+
+Therefore:
+
+\\[ 3=H\_{\text{current}}-104+1 \\]
+
+\\[ H\_{\text{current}}=106 \\]
+
+Assuming block 104 is still in the active chain, your node's current tip is therefore block 106.
+
+The sequence is:
+
+```
+Block 104: Transaction included — 1 confirmation
+Block 105: Next block mined      — 2 confirmations
+Block 106: Next block mined      — 3 confirmations
+```
+
+Your payments are confirmed. In regtest, you can mine additional blocks manually, unlike waiting for natural block production on Bitcoin mainnet.
+
+## 4. The most interesting entry: `immature`
+
+Now examine your mining reward:
+
+```
+{
+  "address": "bcrt1qx0nzng3t24l8e6kj0xqv845d23wl6mghrlzlnl",
+  "category": "immature",
+  "amount": 50.00000425,
+  "confirmations": 3,
+  "generated": true,
+  "blockheight": 104,
+  "blockindex": 0,
+  "parent_descs": [
+    "wpkh([7bdf6d3c/84h/1h/0h]tpub.../0/*)#6mfnu2jl"
+  ]
+}
+```
+
+This is a coinbase transaction, created by the miner of block 104.
+
+### Why is the amount 50.00000425 BTC rather than exactly 50 BTC?
+
+Look at the fees from your three outgoing transactions:
+
+\\[ 0.00000141+0.00000143+0.00000141 =0.00000425\ \text{BTC} \\]
+
+Now compare that with the mining reward:
+
+\\[ 50+0.00000425=50.00000425\ \text{BTC} \\]
+
+The amounts match exactly!
+
+Your miner's coinbase output contains:
+
+- 50 BTC — the block subsidy under the current regtest subsidy schedule.
+- 0.00000425 BTC — the transaction fees collected from the transactions included in that block.
+
+The miner claims the subsidy and transaction fees through the coinbase transaction.
+
+This is a useful example of how transaction fees flow through the Bitcoin system.
+
+### Why is the reward still immature?
+
+The entry has:
+
+```
+"category": "immature",
+"confirmations": 3,
+"generated": true
+```
+
+Bitcoin Core enforces a coinbase maturity requirement of 100 confirmations before a coinbase output can be spent.
+
+Your reward has only three confirmations, so it is not yet spendable.
+
+\\[ 100-3=97 \\]
+
+You need 97 additional confirmations for this particular reward to reach 100 confirmations, assuming it remains in the active chain.
+
+On regtest, you can mine the required additional blocks to an address controlled by your miner wallet:
+
+```
+bitcoin-cli -regtest generatetoaddress 97 "YOUR_MINER_ADDRESS"
+```
+
+Replace the placeholder with an actual address belonging to your miner wallet. Then check:
+
+```
+bitcoin-cli -regtest -rpcwallet=omar getbalances
+```
+
+Use the actual wallet name associated with this coinbase output if it is not Omar's.
+
+Important: The reward is not lost or invalid. It is simply subject to the coinbase maturity rule. Reaching 100 confirmations makes it eligible to be spent, assuming the output is otherwise valid and spendable.
+
+## 5. What does `parent_descs` mean?
+
+Your coinbase entry contains a descriptor:
+
+```
+wpkh([7bdf6d3c/84h/1h/0h]tpub.../0/*)#6mfnu2jl
+```
+
+This provides information about how the wallet derives the relevant address.
+
+- `wpkh(...)` — Describes a native SegWit pay-to-witness-public-key-hash script.
+- `7bdf6d3c` — An example of a key-origin fingerprint identifying the originating key hierarchy.
+- `84h/1h/0h` — A derivation path associated with the BIP84 convention, using hardened derivation levels.
+- `tpub...` — A placeholder for an extended public key used for deriving addresses on a test network.
+- `/0/*` — Represents an external address derivation branch and a wildcard for successive address indexes.
+- `#6mfnu2jl` — The descriptor checksum.
+
+The actual output contains a complete extended public key, but it has been shortened above for explanation.
+
+This connects directly to Lab 15: descriptors help Bitcoin Core understand how wallet addresses and scripts are derived. An extended public key can support address derivation without providing the private key needed to spend the funds.
+
+## 6. Verify the transactions directly
+
+You can inspect the block that contains all these entries:
+
+```
+bitcoin-cli -regtest getblock \
+"1112fab8d459c3d89d2ca17da4e6a37502bc200d5a9966c5c9cefd912da31c83" 2
+```
+
+The `2` requests decoded transaction details in the block output.
+
+To check the current chain height:
+
+```
+bitcoin-cli -regtest getblockcount
+```
+
+To inspect the miner wallet's balance categories:
+
+```
+bitcoin-cli -regtest -rpcwallet=omar getbalances
+```
+
+To inspect individual spendable outputs:
+
+```
+bitcoin-cli -regtest -rpcwallet=omar listunspent
+```
+
+These commands let you compare transaction history, coinbase maturity, and the wallet's current spendable outputs.
+
+## 7. Final conclusions
+
+Your output demonstrates three fundamental Bitcoin mechanisms:
+
+1. Outgoing payments: A wallet records the payment amount and the transaction fee separately.
+2. Confirmations: A transaction included in block 104 has three confirmations if the active chain tip is block 106.
+3. Coinbase maturity: The miner receives the block subsidy and transaction fees through a coinbase transaction, but the reward cannot be spent until it reaches 100 confirmations.
+
+The particularly useful observation is that your three transaction fees total exactly `0.00000425 BTC`, which explains why the coinbase amount is `50.00000425 BTC`.
+
+### Practice questions
+
+1. Why is the fee negative in the wallet's `send` entry?
+2. If the chain tip advances from block 106 to block 110, how many confirmations will the transactions in block 104 have?
+3. Why can the miner see a 50.00000425 BTC reward without being able to spend it immediately?
+4. What is the difference between the transaction's `vout` and its `blockindex`?
+5. Why does an extended public key not, by itself, give the miner the ability to spend the funds?
