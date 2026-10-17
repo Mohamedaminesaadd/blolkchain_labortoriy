@@ -762,3 +762,152 @@ Remember that zero peers does not mean your existing blockchain is invalid. It m
 3. If Omar has 101 blocks and Amine has 100 blocks, which commands would you use to investigate the difference?
 4. If Omar mines a block while Amine is disconnected, how might Amine receive that block after reconnecting?
 5. What is the difference between `addnode ... onetry` and configuring a persistent peer connection?
+
+
+The error happens because `getconnection` is not a valid Bitcoin Core RPC method. To get a report about P2P connections between your Bitcoin regtest nodes (`master`, `192.168.122.101`, and `192.168.122.102`), use `getconnectioncount`, `getpeerinfo`, and `getnetworkinfo`.
+
+## 1. Get the P2P connection report
+
+Run these commands on your `master` node.
+
+A. Count connected peers
+
+```
+bitcoin-cli -regtest getconnectioncount
+```
+
+Example output:
+
+```
+2
+```
+
+This means the node currently has two active P2P connections.
+
+B. Get detailed information about each peer
+
+```
+bitcoin-cli -regtest getpeerinfo
+```
+
+This returns JSON information, including:
+
+- `addr`: peer IP address and port.
+- `inbound`: whether the connection was initiated by the remote peer.
+- `version`: peer's Bitcoin protocol version.
+- `subver`: peer's software identifier.
+- `conntime`: connection establishment time.
+- `bytesrecv` / `bytessent`: traffic received and sent.
+- `pingtime`: measured peer latency, when available.
+- `connection_type`: type of P2P connection.
+
+C. Get general network information
+
+```
+bitcoin-cli -regtest getnetworkinfo
+```
+
+This reports network settings, protocol version, local services and connection counts.
+
+## 2. Check whether your two nodes are actually connected
+
+Your `addnode` commands may have added the nodes successfully, but that does not by itself prove the connections are established. Bitcoin Core normally uses port `18444` for P2P in regtest unless you configured a different port.
+
+Check the peers:
+
+```
+bitcoin-cli -regtest getpeerinfo
+```
+
+Check the nodes you added:
+
+```
+bitcoin-cli -regtest getaddednodeinfo
+```
+
+If your nodes use the default regtest P2P port, you can explicitly add them using:
+
+```
+bitcoin-cli -regtest addnode "192.168.122.101:18444" "add"
+bitcoin-cli -regtest addnode "192.168.122.102:18444" "add"
+```
+
+Then check the connection count again.&#x20;
+
+[image](https://www.google.com/s2/favicons?domain=https://github.com\&sz=32)
+
+GitHub
+
++1
+
+
+
+## 3. Get a readable report in your terminal
+
+Use `jq` to display a compact table of the connected peers:
+
+```
+bitcoin-cli -regtest getpeerinfo | jq -r '
+  ["ID", "ADDRESS", "INBOUND", "TYPE", "SENT", "RECEIVED"],
+  (.[] | [
+    .id,
+    .addr,
+    .inbound,
+    .connection_type,
+    .bytessent,
+    .bytesrecv
+  ]) | @tsv
+' | column -t
+```
+
+If `jq` or `column` is missing, install the required utilities:
+
+```
+sudo apt update
+sudo apt install jq bsdextrautils
+```
+
+## 4. Measure network traffic
+
+To inspect the total traffic exchanged by your node:
+
+```
+bitcoin-cli -regtest getnettotals
+```
+
+To request a ping measurement from connected peers:
+
+```
+bitcoin-cli -regtest ping
+sleep 2
+bitcoin-cli -regtest getpeerinfo | jq '.[] | {addr, pingtime, minping, bytesrecv, bytessent}'
+```
+
+The ping values may be unavailable until a response has been received.
+
+## 5. Save a P2P report to a JSON file
+
+If you want a report for your Bitcoin networking lab:
+
+```
+mkdir -p ~/bitcoin-lab/reports
+
+bitcoin-cli -regtest getpeerinfo \
+  > ~/bitcoin-lab/reports/p2p-peers.json
+
+bitcoin-cli -regtest getnetworkinfo \
+  > ~/bitcoin-lab/reports/p2p-network.json
+
+bitcoin-cli -regtest getnettotals \
+  > ~/bitcoin-lab/reports/p2p-traffic.json
+```
+
+You can inspect each file with:
+
+```
+cat ~/bitcoin-lab/reports/p2p-peers.json
+```
+
+These files capture the state at the time you run the commands.
+
+Important: If `getconnectioncount` returns `0`, check that Bitcoin Core is running in regtest mode on all three machines, that the IP addresses are reachable, and that the P2P port is listening.
