@@ -1,0 +1,12 @@
+{
+  "filename": "test.bin",
+  "file_size": 10500,
+  "piece_size": 4096,
+  "piece_count": 3,
+  "file_sha256": "6f39e5a2a7c36b5c3f242ad2334e428281612711a70ba08e77ef36d4a368c274",
+  "pieces": [
+    {"index": 0, "offset": 0, "size": 4096, "filename": "piece_000000.bin", "sha256": "a56c1f64365a2d24601cee67bc5072254c0c6e520e2562b229a3286f0096c397"},
+    {"index": 1, "offset": 4096, "size": 4096, "filename": "piece_000001.bin", "sha256": "6177987bd86458f543b76caf18b4f7c2f35d4867991c4bcdbb3f510af91a12f4"},
+    {"index": 2, "offset": 8192, "size": 2308, "filename": "piece_000002.bin", "sha256": "33d675289236de3de932de5905ee618fce5fac31f64b34aaaf56c48f27334059"}
+  ]
+}

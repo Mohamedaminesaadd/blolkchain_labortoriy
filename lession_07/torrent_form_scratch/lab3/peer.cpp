@@ -7,6 +7,9 @@
 #include <mutex>
 #include <atomic>
 #include <cstdlib>
+#include <chrono>
+#include <algorithm>
+#include <memory>
 
 #include <unistd.h>
 #include <arpa/inet.h>
@@ -25,7 +28,12 @@ private:
     std::unordered_set<std::string> seen_messages;
     std::mutex seen_mutex;
 
-    // Extract ID from ID|TYPE|PAYLOAD.
+    std::vector<std::thread> client_threads;
+    std::mutex threads_mutex;
+
+    std::vector<int> active_clients;
+    std::mutex clients_mutex;
+
     std::string extract_message_id(const std::string& message) {
         size_t separator = message.find('|');
 
@@ -36,7 +44,6 @@ private:
         return message.substr(0, separator);
     }
 
-    // Validate the basic message format.
     bool valid_message(const std::string& message) {
         size_t first = message.find('|');
 
@@ -46,19 +53,15 @@ private:
 
         size_t second = message.find('|', first + 1);
 
-        if (second == std::string::npos || second == first + 1) {
-            return false;
-        }
-
-        return true;
+        return second != std::string::npos &&
+               second != first + 1;
     }
 
-    // Read one newline-terminated message.
     std::string receive_message(int client) {
         std::string message;
         char c;
 
-        while (message.size() < 4096) {
+        while (running && message.size() < 4096) {
             ssize_t n = recv(client, &c, 1, 0);
 
             if (n <= 0) {
@@ -75,7 +78,6 @@ private:
         return "";
     }
 
-    // Send all bytes, handling partial sends.
     bool send_all(int sock, const std::string& data) {
         size_t sent = 0;
 
@@ -97,12 +99,10 @@ private:
         return true;
     }
 
-    // Connect to one neighbor and send a message.
     void send_to_peer(int peer_port, const std::string& message) {
         int sock = socket(AF_INET, SOCK_STREAM, 0);
 
         if (sock < 0) {
-            std::cerr << "Socket creation failed\n";
             return;
         }
 
@@ -113,22 +113,51 @@ private:
 
         if (connect(sock, (sockaddr*)&addr, sizeof(addr)) == 0) {
             send_all(sock, message + "\n");
-        } else {
-            std::cerr << "Could not connect to port "
-                      << peer_port << "\n";
         }
 
         close(sock);
     }
 
-    // Forward to every configured neighbor.
     void broadcast_message(const std::string& message) {
         for (int peer_port : neighbors) {
-            send_to_peer(peer_port, message);
+            if (peer_port != port) {
+                send_to_peer(peer_port, message);
+            }
         }
     }
 
-    // Accept and process incoming connections.
+    void handle_client(int client) {
+        std::string message = receive_message(client);
+        close(client);
+
+        if (message.empty() || !valid_message(message)) {
+            return;
+        }
+
+        std::string id = extract_message_id(message);
+        bool is_new;
+
+        {
+            std::lock_guard<std::mutex> lock(seen_mutex);
+            is_new = seen_messages.insert(id).second;
+        }
+
+        if (!is_new) {
+            std::lock_guard<std::mutex> lock(output_mutex);
+            std::cout << "[Peer " << port
+                      << "] Duplicate ignored: " << id << "\n";
+            return;
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(output_mutex);
+            std::cout << "[Peer " << port
+                      << "] Received: " << message << "\n";
+        }
+
+        broadcast_message(message);
+    }
+
     void listen_for_peers() {
         while (running) {
             int client = accept(server_socket, nullptr, nullptr);
@@ -140,50 +169,44 @@ private:
                 continue;
             }
 
-            std::string message = receive_message(client);
-            close(client);
-
-            if (message.empty() || !valid_message(message)) {
-                std::cout << "Invalid or empty message\n";
-                continue;
-            }
-
-            std::string id = extract_message_id(message);
-            bool is_new;
-
             {
-                std::lock_guard<std::mutex> lock(seen_mutex);
-                is_new = seen_messages.insert(id).second;
+                std::lock_guard<std::mutex> lock(clients_mutex);
+                active_clients.push_back(client);
             }
 
-            if (!is_new) {
-                std::cout << "[Port " << port
-                          << "] Duplicate ignored: " << id << "\n";
-                continue;
-            }
+            std::lock_guard<std::mutex> lock(threads_mutex);
 
-            std::cout << "[Port " << port
-                      << "] Received: " << message << "\n";
+            client_threads.emplace_back([this, client]() {
+                handle_client(client);
 
-            broadcast_message(message);
+                std::lock_guard<std::mutex> client_lock(clients_mutex);
+
+                auto it = std::find(
+                    active_clients.begin(),
+                    active_clients.end(),
+                    client
+                );
+
+                if (it != active_clients.end()) {
+                    active_clients.erase(it);
+                }
+            });
         }
     }
 
+    static std::mutex output_mutex;
+
 public:
-    // Constructor: configure this peer.
     Peer(int peer_port, const std::vector<int>& peer_neighbors)
         : port(peer_port), neighbors(peer_neighbors) {}
 
-    // Avoid accidentally copying a running network node.
     Peer(const Peer&) = delete;
     Peer& operator=(const Peer&) = delete;
 
-    // Destructor: ensure resources are released.
     ~Peer() {
         stop();
     }
 
-    // Start the TCP listener.
     bool start() {
         server_socket = socket(AF_INET, SOCK_STREAM, 0);
 
@@ -194,8 +217,11 @@ public:
 
         int reuse = 1;
         setsockopt(
-            server_socket, SOL_SOCKET, SO_REUSEADDR,
-            &reuse, sizeof(reuse)
+            server_socket,
+            SOL_SOCKET,
+            SO_REUSEADDR,
+            &reuse,
+            sizeof(reuse)
         );
 
         sockaddr_in addr{};
@@ -224,22 +250,6 @@ public:
         return true;
     }
 
-    // Stop the listener and release its resources.
-    void stop() {
-        if (!running.exchange(false)) {
-            return;
-        }
-
-        shutdown(server_socket, SHUT_RDWR);
-        close(server_socket);
-        server_socket = -1;
-
-        if (listener_thread.joinable()) {
-            listener_thread.join();
-        }
-    }
-
-    // Send a locally created message.
     void send_message(const std::string& message) {
         if (!valid_message(message)) {
             std::cout << "Use ID|TYPE|PAYLOAD\n";
@@ -255,22 +265,64 @@ public:
         }
 
         if (!is_new) {
-            std::cout << "You already used message ID: "
-                      << id << "\n";
+            std::cout << "Message ID already used: " << id << "\n";
             return;
         }
 
-        std::cout << "[Port " << port
-                  << "] Sending: " << message << "\n";
+        {
+            std::lock_guard<std::mutex> lock(output_mutex);
+            std::cout << "[Peer " << port
+                      << "] Sending: " << message << "\n";
+        }
 
         broadcast_message(message);
     }
+
+    void stop() {
+        if (!running.exchange(false)) {
+            return;
+        }
+
+        // Stop the listening socket.
+        shutdown(server_socket, SHUT_RDWR);
+        close(server_socket);
+        server_socket = -1;
+
+        // Close active clients so workers blocked in recv() can exit.
+        {
+            std::lock_guard<std::mutex> lock(clients_mutex);
+
+            for (int client : active_clients) {
+                shutdown(client, SHUT_RDWR);
+            }
+        }
+
+        if (listener_thread.joinable()) {
+            listener_thread.join();
+        }
+
+        // Join all worker threads.
+        {
+            std::lock_guard<std::mutex> lock(threads_mutex);
+
+            for (auto& worker : client_threads) {
+                if (worker.joinable()) {
+                    worker.join();
+                }
+            }
+
+            client_threads.clear();
+        }
+
+        std::cout << "Peer " << port << " stopped.\n";
+    }
 };
+
+std::mutex Peer::output_mutex;
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
-        std::cout
-            << "Usage: ./step11 PORT [NEIGHBOR_PORT...]\n";
+        std::cout << "Usage: ./step12 PORT [NEIGHBOR_PORT...]\n";
         return 1;
     }
 
@@ -288,7 +340,7 @@ int main(int argc, char* argv[]) {
     }
 
     std::cout
-        << "Enter ID|TYPE|PAYLOAD\n"
+        << "Format: ID|TYPE|PAYLOAD\n"
         << "Example: a81f29|PING|Hello network\n"
         << "Type QUIT to exit.\n";
 
