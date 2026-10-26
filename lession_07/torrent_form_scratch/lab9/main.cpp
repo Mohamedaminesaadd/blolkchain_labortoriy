@@ -102,6 +102,7 @@ std::string sha256_of_file(const fs::path& path) {
     return hash.finalize_hex();
 }
 
+
 std::uint64_t parse_piece_size(const std::string& text) {
     if (text.empty() || text.find_first_not_of("0123456789") != std::string::npos) {
         throw std::invalid_argument("invalid piece size: '" + text + "'");
@@ -115,6 +116,8 @@ std::uint64_t parse_piece_size(const std::string& text) {
     if (value == 0) throw std::invalid_argument("piece size must be > 0");
     return value;
 }
+
+
 
 // Names read from metadata.json must be plain file names, never paths
 // (prevents "../../something" from escaping the pieces/output directories).

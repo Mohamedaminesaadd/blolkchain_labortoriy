@@ -558,3 +558,144 @@ The key distinction is:
 - Piece data is the actual content stored on disk.
 
 Once this foundation works, we'll move to Step 2 — Calculate piece count, indexes, and byte offsets, which is the basis for requesting and resuming the correct parts of a file.
+
+
+Great. Let's continue with Step 2 — Calculate File Pieces.
+
+The goal is to divide a file into fixed-size pieces so that later we can download, verify, and resume each piece independently.
+
+## 1. Understand the calculation
+
+Suppose the file size is 2.5 MiB and each piece is 1 MiB.
+
+- Piece 0: 1 MiB
+- Piece 1: 1 MiB
+- Piece 2: 0.5 MiB
+
+The number of pieces is:
+
+\\[ \text{total pieces} = \left\lceil\frac{\text{file size}}{\text{piece size}}\right\rceil \\]
+
+For integer arithmetic, use:
+
+\\[ \text{total pieces} = \frac{\text{file size}+\text{piece size}-1}{\text{piece size}} \\]
+
+We need to handle empty files separately or carefully use this formula with a zero size.
+
+## 2. Update `file_metadata.hpp`
+
+Add a function declaration to calculate the number of pieces.
+
+```
+#ifndef FILE_METADATA_HPP
+#define FILE_METADATA_HPP
+
+#include <cstdint>
+#include <string>
+
+struct FileMetadata {
+    std::string filename;
+    std::uint64_t file_size;
+    std::uint32_t piece_size;
+    std::uint32_t total_pieces;
+};
+
+std::uint32_t calculate_total_pieces(
+    std::uint64_t file_size,
+    std::uint32_t piece_size
+);
+
+#endif
+```
+
+## 3. Implement `file_metadata.cpp`
+
+```
+#include "file_metadata.hpp"
+
+#include <stdexcept>
+
+std::uint32_t calculate_total_pieces(
+    std::uint64_t file_size,
+    std::uint32_t piece_size
+) {
+    if (piece_size == 0) {
+        throw std::invalid_argument(
+            "Piece size cannot be zero"
+        );
+    }
+
+    if (file_size == 0) {
+        return 0;
+    }
+
+    const std::uint64_t count =
+        1 + (file_size - 1) / piece_size;
+
+    if (count > UINT32_MAX) {
+        throw std::overflow_error(
+            "Too many pieces for uint32_t"
+        );
+    }
+
+    return static_cast<std::uint32_t>(count);
+}
+```
+
+### Why use `1 + (file_size - 1) / piece_size`?
+
+It computes the ceiling division without adding `piece_size - 1` to `file_size`, which could overflow for extremely large files.
+
+## 4. Test it in `main.cpp`
+
+```
+#include "file_metadata.hpp"
+
+#include <iostream>
+
+int main() {
+    constexpr std::uint32_t PIECE_SIZE = 1024 * 1024;
+
+    const std::uint64_t file_size =
+        2ULL * 1024 * 1024 + 512 * 1024;
+
+    const auto total_pieces =
+        calculate_total_pieces(file_size, PIECE_SIZE);
+
+    FileMetadata metadata{
+        "sample.bin",
+        file_size,
+        PIECE_SIZE,
+        total_pieces
+    };
+
+    std::cout << "File: " << metadata.filename << '\n';
+    std::cout << "File size: " << metadata.file_size << " bytes\n";
+    std::cout << "Piece size: " << metadata.piece_size << " bytes\n";
+    std::cout << "Total pieces: " << metadata.total_pieces << '\n';
+
+    return 0;
+}
+```
+
+Compile from your build directory:
+
+```
+cmake --build .
+./lab_resume
+```
+
+Expected output:
+
+```
+File: sample.bin
+File size: 2621440 bytes
+Piece size: 1048576 bytes
+Total pieces: 3
+```
+
+## 5. Your next task
+
+Now that we know how many pieces exist, the next step is to calculate the offset and size of a specific piece.
+
+For example, piece 2 begins at byte `2097152` and has a size of `524288` bytes. These calculations will let us request the correct bytes from Peer A without retransferring completed pieces.
